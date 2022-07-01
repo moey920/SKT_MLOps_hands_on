@@ -1,0 +1,10 @@
+{
+    "mqtt":{
+        "client_id":"musma_server",
+        "host":"152.149.8.161",
+        "port":58731,
+        "username":"smartyard",
+        "password":"smartyardmgr",
+        "topic":"iot/ahic"
+    }
+}
