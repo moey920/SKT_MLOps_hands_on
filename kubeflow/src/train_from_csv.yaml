@@ -1,0 +1,67 @@
+name: Train from csv
+inputs:
+- {name: train_data, type: csv}
+- {name: train_target, type: csv}
+- {name: kernel, type: String}
+outputs:
+- {name: model, type: dill}
+implementation:
+  container:
+    image: python:3.7
+    command:
+    - sh
+    - -c
+    - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+      'dill==0.3.4' 'pandas==1.3.4' 'scikit-learn==1.0.1' || PIP_DISABLE_PIP_VERSION_CHECK=1
+      python3 -m pip install --quiet --no-warn-script-location 'dill==0.3.4' 'pandas==1.3.4'
+      'scikit-learn==1.0.1' --user) && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp)
+      printf "%s" "$0" > "$program_path"
+      python3 -u "$program_path" "$@"
+    - |
+      def _make_parent_dirs_and_return_path(file_path: str):
+          import os
+          os.makedirs(os.path.dirname(file_path), exist_ok=True)
+          return file_path
+
+      def train_from_csv(
+          train_data_path,
+          train_target_path,
+          model_path,
+          kernel,
+      ):
+          import dill
+          import pandas as pd
+
+          from sklearn.svm import SVC
+
+          train_data = pd.read_csv(train_data_path)
+          train_target = pd.read_csv(train_target_path)
+
+          clf = SVC(kernel=kernel)
+          clf.fit(train_data, train_target)
+
+          with open(model_path, mode="wb") as file_writer:
+              dill.dump(clf, file_writer)
+
+      import argparse
+      _parser = argparse.ArgumentParser(prog='Train from csv', description='')
+      _parser.add_argument("--train-data", dest="train_data_path", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("--train-target", dest="train_target_path", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("--kernel", dest="kernel", type=str, required=True, default=argparse.SUPPRESS)
+      _parser.add_argument("--model", dest="model_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+      _parsed_args = vars(_parser.parse_args())
+
+      _outputs = train_from_csv(**_parsed_args)
+    args:
+    - --train-data
+    - {inputPath: train_data}
+    - --train-target
+    - {inputPath: train_target}
+    - --kernel
+    - {inputValue: kernel}
+    - --model
+    - {outputPath: model}
