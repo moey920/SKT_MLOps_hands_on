@@ -2,14 +2,19 @@ apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: data
+# storage는 실제로 사용하는 용량을 제한하는 것이 아니라 쓸 수 있는 양을 레이블로 붙이는 것과 같습니다. 
 spec:
   capacity:
     storage: 10Gi
   volumeMode: Filesystem
+  # PV를 어떤 방식으로 사용할지 정의하는 부분입니다. ReadWriteMany는 여러 개의 노드가 읽고 쓸 수 있도록 마운트하는 옵션입니다. 
+  # 이외에도 ReadWriteOnce(하나의 노드에서만 볼륨을 읽고 쓸 수 있게 마운트)와 ReadOnlyMany(여러 개의 노드가 읽기만 하도록 마운트) 옵션이 있습니다.
   accessModes:
     - ReadWriteMany
+  # PV가 제거됐을 때 볼륨이 작동하는 방법을 정의하는 것으로, Retain(유지), Delete(삭제), Recycle(재활용) 옵션이 있습니다.
   persistentVolumeReclaimPolicy: Recycle
   storageClassName: data
+  # NFS 서버의 연결 위치에 대한 설정입니다.
   nfs:
     path: /mnt/nfs/data
-    server: 192.168.0.14
+    server: 192.168.49.2
