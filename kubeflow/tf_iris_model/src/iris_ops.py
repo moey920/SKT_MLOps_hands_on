@@ -8,12 +8,16 @@ from kubeflow.katib import V1beta1ParameterSpec
 from kubeflow.katib import V1beta1FeasibleSpace
 from kubeflow.katib import V1beta1TrialTemplate
 from kubeflow.katib import V1beta1TrialParameterSpec
-from kubeflow.katib import KatibClient
+
+from pytz import timezone, utc
+from datetime import datetime as dt
+
+KST = timezone("Asia/Seoul")
+pipeline_start_date_str = utc.localize(dt.utcnow()).astimezone(KST).strftime("%Y%m%d")
 
 
-def create_katib_experiment_task(experiment_name, experiment_namespace, df_me):
+def create_katib_experiment_task(experiment_name, experiment_namespace):
     """
-
     Args:
 
     Retruns:
@@ -21,87 +25,49 @@ def create_katib_experiment_task(experiment_name, experiment_namespace, df_me):
     """
 
     # Trial count specification.
-    max_trial_count = 6
-    max_failed_trial_count = 5
+    max_trial_count = 12
+    max_failed_trial_count = 10
     parallel_trial_count = 3
-    # max_trial_count = 2
-    # max_failed_trial_count = 2
-    # parallel_trial_count = 2
 
     # Objective specification.
     objective = V1beta1ObjectiveSpec(
-        type="minimize", goal=0.01, objective_metric_name="mean_absolute_error"
+        type="maximize", goal=1.0, objective_metric_name="accuracy"
     )
 
+
     # Algorithm specification.
-    algorithm = V1beta1AlgorithmSpec(algorithm_name="grid",)
+    algorithm = V1beta1AlgorithmSpec(
+        algorithm_name="random",
+    )
 
     # Parameters specification.
     parameters = [
         V1beta1ParameterSpec(
-            name="model_name",
-            parameter_type="categorical",
-            feasible_space=V1beta1FeasibleSpace(
-                list=[
-                    "xgb_regressor",
-                    "xgbrf_regressor",
-                    "linear_regression",
-                    "kneighbors_regressor",
-                    "linear_svr",
-                    "linear_tree_regressor",
-                    "extra_trees_regressor",
-                ]
-            ),
+            name="batch_size",
+            parameter_type="int",
+            feasible_space=V1beta1FeasibleSpace(min="16", max="64", step="16"),
         ),
+        V1beta1ParameterSpec(
+            name="epoch",
+            parameter_type="int",
+            feasible_space=V1beta1FeasibleSpace(min="100", max="500", step="100"),
+        ),
+        V1beta1ParameterSpec(
+            name="optimizer",
+            parameter_type="categorical",
+            feasible_space=V1beta1FeasibleSpace(list=["rmsprop", "sgd", "adam"]),
+        )
     ]
-
+    
     data_pvc_name = "data-claim"
-
     # Experiment Trial template.
     trial_spec = {
         "apiVersion": "kubeflow.org/v1",
         "kind": "TFJob",
         "spec": {
             "tfReplicaSpecs": {
-                "Chief": {
-                    "replicas": 1,
-                    "restartPolicy": "OnFailure",
-                    "template": {
-                        "metadata": {
-                            "annotations": {"sidecar.istio.io/inject": "false"}
-                        },
-                        "spec": {
-                            "containers": [
-                                {
-                                    "name": "tensorflow",
-                                    "image": "docker.io/moey920/train_forecasting_model:latest",
-                                    "command": [
-                                        "python",
-                                        "/code/ml_models.py",
-                                        f"--df_me={df_me}",
-                                        "--model_name=${trialParameters.modelName}",
-                                    ],
-                                    "volumeMounts": [
-                                        {
-                                            "mountPath": "/code/data",
-                                            "name": "data-volume",
-                                        },
-                                    ],
-                                }
-                            ],
-                            "volumes": [
-                                {
-                                    "name": "data-volume",
-                                    "persistentVolumeClaim": {
-                                        "claimName": data_pvc_name
-                                    },
-                                },
-                            ],
-                        },
-                    },
-                },
                 "Worker": {
-                    "replicas": 1,
+                    "replicas": 2,
                     "restartPolicy": "OnFailure",
                     "template": {
                         "metadata": {
@@ -111,12 +77,13 @@ def create_katib_experiment_task(experiment_name, experiment_namespace, df_me):
                             "containers": [
                                 {
                                     "name": "tensorflow",
-                                    "image": "docker.io/moey920/train_forecasting_model:latest",
+                                    "image": "docker.io/moey920/tf_iris_model:latest",
                                     "command": [
                                         "python",
-                                        "/code/ml_models.py",
-                                        f"--df_me={df_me}",
-                                        "--model_name=${trialParameters.modelName}",
+                                        "/code/src/train_with_preprocess.py",
+                                        "--batch_size=${trialParameters.batchSize}",
+                                        "--epoch=${trialParameters.epoch}",
+                                        "--optimizer=${trialParameters.optimizer}"
                                     ],
                                     "volumeMounts": [
                                         {
@@ -146,7 +113,19 @@ def create_katib_experiment_task(experiment_name, experiment_namespace, df_me):
         primary_container_name="tensorflow",
         trial_parameters=[
             V1beta1TrialParameterSpec(
-                name="modelName", description="model_name", reference="model_name",
+                name="batchSize",
+                description="batch_size",
+                reference="batch_size",
+            ),
+            V1beta1TrialParameterSpec(
+                name="epoch",
+                description="epoch",
+                reference="epoch",
+            ),
+            V1beta1TrialParameterSpec(
+                name="optimizer",
+                description="optimizer",
+                reference="optimizer",
             ),
         ],
         trial_spec=trial_spec,
@@ -189,8 +168,6 @@ Retruns:
     best_hps = list("--input_width=6", "--label_width=4", "--shift=5", "--mae=0.0376")
     to convert " ".join(best_hps): return best hyper parameters like "--input_width=6 --label_width=4 --shift=5 --mae=0.0376"
 """
-
-
 def convert_katib_results(katib_results) -> str:
 
     import json
@@ -201,35 +178,18 @@ def convert_katib_results(katib_results) -> str:
     pprint.pprint(katib_results_json)
     best_hps = []
     for pa in katib_results_json["currentOptimalTrial"]["parameterAssignments"]:
-        if pa["name"] == "model_name":
-            best_hps.append("--model_name=" + pa["value"])
-    best_hps.append(
-        "--mean_absolute_error="
-        + katib_results_json["currentOptimalTrial"]["observation"]["metrics"][0]["min"]
-    )
+        if pa["name"] == "batch_size":
+            best_hps.append("--batch_size=" + pa["value"])
+        elif pa["name"] == "epoch":
+            best_hps.append("--epoch=" + pa["value"])
+        elif pa["name"] == "optimizer":
+            best_hps.append("--optimizer=" + pa["value"])
     print("Best Hyperparameters: {}".format(best_hps))
 
     return " ".join(best_hps)
 
 
-def katib_logger(name, namespace):
-
-    from kubeflow.katib import KatibClient
-
-    kclient = KatibClient()
-    trial_details_log = kclient.get_success_trial_details(
-        name=name, namespace=namespace
-    )
-    optimal_trial_details_log = kclient.get_optimal_hyperparameters(
-        name=name, namespace=namespace
-    )
-    print("trial_details_log :", trial_details_log)
-    print("optimal_trial_details_log :", optimal_trial_details_log)
-    delete_trial_log = kclient.delete_experiment(name=name, namespace=namespace)
-    print("optimal_trial_details_log :", delete_trial_log)
-
-
-def create_tfjob_task(tfjob_name, tfjob_namespace, ml_katib_op, df_me):
+def create_tfjob_task(tfjob_name, tfjob_namespace, katib_op):
     """
     convert_katib_results returns the format ["--input_width=6", "--label_width=4", "--shift=5", "--model_name=baseline"]
     The results are stored in best_hp_op. Save the above to best_hps in str format.
@@ -246,34 +206,12 @@ def create_tfjob_task(tfjob_name, tfjob_namespace, ml_katib_op, df_me):
     import json
 
     convert_katib_results_op = components.func_to_container_op(convert_katib_results)
-
-    ml_best_hp_op = convert_katib_results_op(ml_katib_op.output)
-
-    best_hps_dict = {
-        "ml": str(ml_best_hp_op.output),
-    }
-
-    config_op_packages = ["kubeflow-katib", "kfp"]
-
-    katib_logger_op = components.func_to_container_op(
-        katib_logger, packages_to_install=config_op_packages
-    )
-
-    katib_logger_result = katib_logger_op(
-        name="forecasting-ml-model", namespace=tfjob_namespace
-    ).after(ml_best_hp_op)
-
-    print(katib_logger_result)
-
-    # best_hps_1 = sorted(best_hps_dict.items(), key=lambda x: x[1][-5:])[0][1]
-    best_hps = best_hps_dict["ml"]
-
+    best_hp_op = convert_katib_results_op(katib_op.output)
+    best_hps = str(best_hp_op.output)
     print("best_hps:", best_hps)
 
-    # pvc_name = str(model_volume_op.outputs["name"])
-    pvc_name = "forecasting-claim"
-    data_pvc_name = "data-claim"
 
+    data_pvc_name = "data-claim"
     # Generate TFJob Chief and Worker specs with the best hyperparameters.
     tfjob_chief_spec = {
         "replicas": 1,
@@ -284,27 +222,20 @@ def create_tfjob_task(tfjob_name, tfjob_namespace, ml_katib_op, df_me):
                 "containers": [
                     {
                         "name": "tensorflow",
-                        "image": "docker.io/moey920/train_forecasting_model:latest",
+                        "image": "docker.io/moey920/tf_iris_model:latest",
                         "command": ["sh", "-c"],
                         "args": [
-                            "python /code/ml_models.py --save=/mnt/export --df_me={} {}".format(
-                                df_me, best_hps
-                            )
+                            f"python /code/src/train_with_preprocess.py --save=/code/data {best_hps}"
                         ],
                         "volumeMounts": [
                             {
-                                "mountPath": "/mnt/export",
-                                "name": "forecasting-model-volume",
+                                "mountPath": "/code/data",
+                                "name": "data-volume",
                             },
-                            {"mountPath": "/code/data", "name": "data-volume",},
                         ],
                     }
                 ],
                 "volumes": [
-                    {
-                        "name": "forecasting-model-volume",
-                        "persistentVolumeClaim": {"claimName": pvc_name},
-                    },
                     {
                         "name": "data-volume",
                         "persistentVolumeClaim": {"claimName": data_pvc_name},
@@ -323,27 +254,20 @@ def create_tfjob_task(tfjob_name, tfjob_namespace, ml_katib_op, df_me):
                 "containers": [
                     {
                         "name": "tensorflow",
-                        "image": "docker.io/moey920/train_forecasting_model:latest",
+                        "image": "docker.io/moey920/tf_iris_model:latest",
                         "command": ["sh", "-c"],
                         "args": [
-                            "python /code/ml_models.py --save=/mnt/export --df_me={} {}".format(
-                                df_me, best_hps
-                            )
+                            f"python /code/src/train_with_preprocess.py --save=/code/data {best_hps}"
                         ],
                         "volumeMounts": [
                             {
-                                "mountPath": "/mnt/export",
-                                "name": "forecasting-model-volume",
+                                "mountPath": "/code/data",
+                                "name": "data-volume",
                             },
-                            {"mountPath": "/code/data", "name": "data-volume",},
                         ],
                     }
                 ],
                 "volumes": [
-                    {
-                        "name": "forecasting-model-volume",
-                        "persistentVolumeClaim": {"claimName": pvc_name},
-                    },
                     {
                         "name": "data-volume",
                         "persistentVolumeClaim": {"claimName": data_pvc_name},
@@ -366,7 +290,7 @@ def create_tfjob_task(tfjob_name, tfjob_namespace, ml_katib_op, df_me):
         delete_finished_tfjob=True,
     )
 
-    return op.after(ml_best_hp_op)
+    return op.after(best_hp_op)
 
 
 # In Arguments you must define the model name, namespace, TFJob, and the output of the model volume job.
@@ -378,10 +302,9 @@ def create_kfserving_task(name, namespace, tfjob_op):
         name(str): KatibOp의 이름입니다.
         namespace(str): kubeflow-user-example-com만 사용합니다.
         tfjob_op: create_tfjob_task의 리턴으로 받아오는 ContainerOp입니다.
-        model_volume_op: dsl.VolumeOp로 생성한 ConatainerOp입니다.
     """
 
-    pvc_name = "forecasting-claim"
+    data_pvc_name = "data-claim"
 
     inference_service = """
 apiVersion: "serving.kubeflow.org/v1beta1"
@@ -394,9 +317,10 @@ metadata:
 spec:
     predictor:
         tensorflow:
-            storageUri: "pvc://{}/"
+            runtimeVersion: "2.8.0"
+            storageUri: "pvc://{}/{}/"
 """.format(
-        name, namespace, pvc_name
+        name, namespace, data_pvc_name, pipeline_start_date_str
     )
 
     kfserving_launcher_op = components.load_component_from_url(
@@ -404,7 +328,6 @@ spec:
     )
     op = kfserving_launcher_op(
         action="create",
-        framework="sklearn",
         canary_traffic_percent="10",
         inferenceservice_yaml=inference_service,
     ).after(tfjob_op)

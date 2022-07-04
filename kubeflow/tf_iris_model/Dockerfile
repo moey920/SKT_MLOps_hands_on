@@ -4,7 +4,5 @@ LABEL org.opencontainers.image.source=https://github.com/moey920/SKT_MLOps_hands
 RUN mkdir /code
 WORKDIR /code
 COPY ./ /code/
-RUN chmod -R 777 /code
-RUN chmod -R 777 /mnt
 RUN /usr/bin/python3 -m pip install --upgrade pip
 RUN pip install -r requirements.txt

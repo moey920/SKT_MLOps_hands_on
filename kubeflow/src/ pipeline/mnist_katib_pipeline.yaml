@@ -1,0 +1,384 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: katib-pipeline-
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.9, pipelines.kubeflow.org/pipeline_compilation_time: '2022-07-03T16:42:11.413604',
+    pipelines.kubeflow.org/pipeline_spec: '{"description": "An end to end mnist example
+      including hyperparameter tuning, train and inference", "inputs": [{"default":
+      "mnist-katib", "name": "name", "optional": true}, {"default": "kubeflow-user-example-com",
+      "name": "namespace", "optional": true}, {"default": "200", "name": "training_steps",
+      "optional": true}], "name": "Katib Pipeline"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.8.9}
+spec:
+  entrypoint: katib-pipeline
+  templates:
+  - name: convert-katib-results
+    container:
+      args: [--katib-results, '{{inputs.parameters.katib-launch-experiment-Best-Parameter-Set}}',
+        '----output-paths', /tmp/outputs/Output/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def convert_katib_results(katib_results):
+            import json
+            import pprint
+            katib_results_json = json.loads(katib_results)
+            print("Katib results:")
+            pprint.pprint(katib_results_json)
+            best_hps = []
+            for pa in katib_results_json["currentOptimalTrial"]["parameterAssignments"]:
+                if pa["name"] == "learning_rate":
+                    best_hps.append("--tf-learning-rate=" + pa["value"])
+                elif pa["name"] == "batch_size":
+                    best_hps.append("--tf-batch-size=" + pa["value"])
+            print("Best Hyperparameters: {}".format(best_hps))
+            return " ".join(best_hps)
+
+        def _serialize_str(str_value: str) -> str:
+            if not isinstance(str_value, str):
+                raise TypeError('Value "{}" has type "{}" instead of str.'.format(
+                    str(str_value), str(type(str_value))))
+            return str_value
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Convert katib results', description='')
+        _parser.add_argument("--katib-results", dest="katib_results", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("----output-paths", dest="_output_paths", type=str, nargs=1)
+        _parsed_args = vars(_parser.parse_args())
+        _output_files = _parsed_args.pop("_output_paths", [])
+
+        _outputs = convert_katib_results(**_parsed_args)
+
+        _outputs = [_outputs]
+
+        _output_serializers = [
+            _serialize_str,
+
+        ]
+
+        import os
+        for idx, output_file in enumerate(_output_files):
+            try:
+                os.makedirs(os.path.dirname(output_file))
+            except OSError:
+                pass
+            with open(output_file, 'w') as f:
+                f.write(_output_serializers[idx](_outputs[idx]))
+      image: python:3.7
+    inputs:
+      parameters:
+      - {name: katib-launch-experiment-Best-Parameter-Set}
+    outputs:
+      parameters:
+      - name: convert-katib-results-Output
+        valueFrom: {path: /tmp/outputs/Output/data}
+      artifacts:
+      - {name: convert-katib-results-Output, path: /tmp/outputs/Output/data}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.9
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--katib-results", {"inputValue": "katib_results"}, "----output-paths",
+          {"outputPath": "Output"}], "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf
+          \"%s\" \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n",
+          "def convert_katib_results(katib_results):\n    import json\n    import
+          pprint\n    katib_results_json = json.loads(katib_results)\n    print(\"Katib
+          results:\")\n    pprint.pprint(katib_results_json)\n    best_hps = []\n    for
+          pa in katib_results_json[\"currentOptimalTrial\"][\"parameterAssignments\"]:\n        if
+          pa[\"name\"] == \"learning_rate\":\n            best_hps.append(\"--tf-learning-rate=\"
+          + pa[\"value\"])\n        elif pa[\"name\"] == \"batch_size\":\n            best_hps.append(\"--tf-batch-size=\"
+          + pa[\"value\"])\n    print(\"Best Hyperparameters: {}\".format(best_hps))\n    return
+          \" \".join(best_hps)\n\ndef _serialize_str(str_value: str) -> str:\n    if
+          not isinstance(str_value, str):\n        raise TypeError(''Value \"{}\"
+          has type \"{}\" instead of str.''.format(\n            str(str_value), str(type(str_value))))\n    return
+          str_value\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Convert
+          katib results'', description='''')\n_parser.add_argument(\"--katib-results\",
+          dest=\"katib_results\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"----output-paths\",
+          dest=\"_output_paths\", type=str, nargs=1)\n_parsed_args = vars(_parser.parse_args())\n_output_files
+          = _parsed_args.pop(\"_output_paths\", [])\n\n_outputs = convert_katib_results(**_parsed_args)\n\n_outputs
+          = [_outputs]\n\n_output_serializers = [\n    _serialize_str,\n\n]\n\nimport
+          os\nfor idx, output_file in enumerate(_output_files):\n    try:\n        os.makedirs(os.path.dirname(output_file))\n    except
+          OSError:\n        pass\n    with open(output_file, ''w'') as f:\n        f.write(_output_serializers[idx](_outputs[idx]))\n"],
+          "image": "python:3.7"}}, "inputs": [{"name": "katib_results"}], "name":
+          "Convert katib results", "outputs": [{"name": "Output", "type": "String"}]}',
+        pipelines.kubeflow.org/component_ref: '{}', pipelines.kubeflow.org/arguments.parameters: '{"katib_results":
+          "{{inputs.parameters.katib-launch-experiment-Best-Parameter-Set}}"}'}
+  - name: katib-launch-experiment
+    container:
+      args:
+      - --experiment-name
+      - '{{inputs.parameters.name}}'
+      - --experiment-namespace
+      - '{{inputs.parameters.namespace}}'
+      - --experiment-spec
+      - '{"algorithm": {"algorithmName": "random"}, "maxFailedTrialCount": 3, "maxTrialCount":
+        5, "objective": {"goal": 0.001, "objectiveMetricName": "loss", "type": "minimize"},
+        "parallelTrialCount": 2, "parameters": [{"feasibleSpace": {"max": "0.05",
+        "min": "0.01"}, "name": "learning_rate", "parameterType": "double"}, {"feasibleSpace":
+        {"max": "100", "min": "80"}, "name": "batch_size", "parameterType": "int"}],
+        "trialTemplate": {"primaryContainerName": "tensorflow", "trialParameters":
+        [{"description": "Learning rate for the training model", "name": "learningRate",
+        "reference": "learning_rate"}, {"description": "Batch size for the model",
+        "name": "batchSize", "reference": "batch_size"}], "trialSpec": {"apiVersion":
+        "kubeflow.org/v1", "kind": "TFJob", "spec": {"tfReplicaSpecs": {"Chief": {"replicas":
+        1, "restartPolicy": "OnFailure", "template": {"metadata": {"annotations":
+        {"sidecar.istio.io/inject": "false"}}, "spec": {"containers": [{"command":
+        ["python", "/opt/model.py", "--tf-train-steps={{inputs.parameters.training_steps}}",
+        "--tf-learning-rate=${trialParameters.learningRate}", "--tf-batch-size=${trialParameters.batchSize}"],
+        "image": "docker.io/liuhougangxa/tf-estimator-mnist", "name": "tensorflow"}]}}},
+        "Worker": {"replicas": 1, "restartPolicy": "OnFailure", "template": {"metadata":
+        {"annotations": {"sidecar.istio.io/inject": "false"}}, "spec": {"containers":
+        [{"command": ["python", "/opt/model.py", "--tf-train-steps={{inputs.parameters.training_steps}}",
+        "--tf-learning-rate=${trialParameters.learningRate}", "--tf-batch-size=${trialParameters.batchSize}"],
+        "image": "docker.io/liuhougangxa/tf-estimator-mnist", "name": "tensorflow"}]}}}}}}}}'
+      - --experiment-timeout-minutes
+      - '60'
+      - --delete-after-done
+      - "False"
+      - --output-file
+      - /tmp/outputs/Best_Parameter_Set/data
+      command: [python, src/launch_experiment.py]
+      image: docker.io/kubeflowkatib/kubeflow-pipelines-launcher
+    inputs:
+      parameters:
+      - {name: name}
+      - {name: namespace}
+      - {name: training_steps}
+    outputs:
+      parameters:
+      - name: katib-launch-experiment-Best-Parameter-Set
+        valueFrom: {path: /tmp/outputs/Best_Parameter_Set/data}
+      artifacts:
+      - {name: katib-launch-experiment-Best-Parameter-Set, path: /tmp/outputs/Best_Parameter_Set/data}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.9
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Katib
+          Experiment launcher", "implementation": {"container": {"args": ["--experiment-name",
+          {"inputValue": "Experiment Name"}, "--experiment-namespace", {"inputValue":
+          "Experiment Namespace"}, "--experiment-spec", {"inputValue": "Experiment
+          Spec"}, "--experiment-timeout-minutes", {"inputValue": "Experiment Timeout
+          Minutes"}, "--delete-after-done", {"inputValue": "Delete Finished Experiment"},
+          "--output-file", {"outputPath": "Best Parameter Set"}], "command": ["python",
+          "src/launch_experiment.py"], "image": "docker.io/kubeflowkatib/kubeflow-pipelines-launcher"}},
+          "inputs": [{"default": "", "description": "Experiment name", "name": "Experiment
+          Name", "type": "String"}, {"default": "anonymous", "description": "Experiment
+          namespace", "name": "Experiment Namespace", "type": "String"}, {"default":
+          "{}", "description": "Experiment specification in dict format", "name":
+          "Experiment Spec", "type": "JsonObject"}, {"default": 1440, "description":
+          "Time in minutes to wait for the Experiment to complete", "name": "Experiment
+          Timeout Minutes", "type": "Integer"}, {"default": "True", "description":
+          "Whether to delete the Experiment after it is finished", "name": "Delete
+          Finished Experiment", "type": "Bool"}], "name": "Katib - Launch Experiment",
+          "outputs": [{"description": "The hyperparameter set of the best Experiment
+          Trial", "name": "Best Parameter Set", "type": "JsonObject"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "a93c64b052e810a0d0d0ada3f28a03b3e45e5a3e3bf03272d4bf6c67d5e14bac", "url":
+          "https://raw.githubusercontent.com/kubeflow/pipelines/master/components/kubeflow/katib-launcher/component.yaml"}',
+        pipelines.kubeflow.org/arguments.parameters: '{"Delete Finished Experiment":
+          "False", "Experiment Name": "{{inputs.parameters.name}}", "Experiment Namespace":
+          "{{inputs.parameters.namespace}}", "Experiment Spec": "{\"algorithm\": {\"algorithmName\":
+          \"random\"}, \"maxFailedTrialCount\": 3, \"maxTrialCount\": 5, \"objective\":
+          {\"goal\": 0.001, \"objectiveMetricName\": \"loss\", \"type\": \"minimize\"},
+          \"parallelTrialCount\": 2, \"parameters\": [{\"feasibleSpace\": {\"max\":
+          \"0.05\", \"min\": \"0.01\"}, \"name\": \"learning_rate\", \"parameterType\":
+          \"double\"}, {\"feasibleSpace\": {\"max\": \"100\", \"min\": \"80\"}, \"name\":
+          \"batch_size\", \"parameterType\": \"int\"}], \"trialTemplate\": {\"primaryContainerName\":
+          \"tensorflow\", \"trialParameters\": [{\"description\": \"Learning rate
+          for the training model\", \"name\": \"learningRate\", \"reference\": \"learning_rate\"},
+          {\"description\": \"Batch size for the model\", \"name\": \"batchSize\",
+          \"reference\": \"batch_size\"}], \"trialSpec\": {\"apiVersion\": \"kubeflow.org/v1\",
+          \"kind\": \"TFJob\", \"spec\": {\"tfReplicaSpecs\": {\"Chief\": {\"replicas\":
+          1, \"restartPolicy\": \"OnFailure\", \"template\": {\"metadata\": {\"annotations\":
+          {\"sidecar.istio.io/inject\": \"false\"}}, \"spec\": {\"containers\": [{\"command\":
+          [\"python\", \"/opt/model.py\", \"--tf-train-steps={{inputs.parameters.training_steps}}\",
+          \"--tf-learning-rate=${trialParameters.learningRate}\", \"--tf-batch-size=${trialParameters.batchSize}\"],
+          \"image\": \"docker.io/liuhougangxa/tf-estimator-mnist\", \"name\": \"tensorflow\"}]}}},
+          \"Worker\": {\"replicas\": 1, \"restartPolicy\": \"OnFailure\", \"template\":
+          {\"metadata\": {\"annotations\": {\"sidecar.istio.io/inject\": \"false\"}},
+          \"spec\": {\"containers\": [{\"command\": [\"python\", \"/opt/model.py\",
+          \"--tf-train-steps={{inputs.parameters.training_steps}}\", \"--tf-learning-rate=${trialParameters.learningRate}\",
+          \"--tf-batch-size=${trialParameters.batchSize}\"], \"image\": \"docker.io/liuhougangxa/tf-estimator-mnist\",
+          \"name\": \"tensorflow\"}]}}}}}}}}", "Experiment Timeout Minutes": "60"}'}
+  - name: katib-pipeline
+    inputs:
+      parameters:
+      - {name: name}
+      - {name: namespace}
+      - {name: training_steps}
+    dag:
+      tasks:
+      - name: convert-katib-results
+        template: convert-katib-results
+        dependencies: [katib-launch-experiment]
+        arguments:
+          parameters:
+          - {name: katib-launch-experiment-Best-Parameter-Set, value: '{{tasks.katib-launch-experiment.outputs.parameters.katib-launch-experiment-Best-Parameter-Set}}'}
+      - name: katib-launch-experiment
+        template: katib-launch-experiment
+        arguments:
+          parameters:
+          - {name: name, value: '{{inputs.parameters.name}}'}
+          - {name: namespace, value: '{{inputs.parameters.namespace}}'}
+          - {name: training_steps, value: '{{inputs.parameters.training_steps}}'}
+      - name: kubeflow-launch-tfjob
+        template: kubeflow-launch-tfjob
+        dependencies: [convert-katib-results, model-volume]
+        arguments:
+          parameters:
+          - {name: convert-katib-results-Output, value: '{{tasks.convert-katib-results.outputs.parameters.convert-katib-results-Output}}'}
+          - {name: model-volume-name, value: '{{tasks.model-volume.outputs.parameters.model-volume-name}}'}
+          - {name: name, value: '{{inputs.parameters.name}}'}
+          - {name: namespace, value: '{{inputs.parameters.namespace}}'}
+          - {name: training_steps, value: '{{inputs.parameters.training_steps}}'}
+      - {name: model-volume, template: model-volume}
+  - name: kubeflow-launch-tfjob
+    container:
+      args:
+      - --name
+      - '{{inputs.parameters.name}}'
+      - --namespace
+      - '{{inputs.parameters.namespace}}'
+      - --version
+      - v1
+      - --activeDeadlineSeconds
+      - '-1'
+      - --backoffLimit
+      - '-1'
+      - --cleanPodPolicy
+      - Running
+      - --ttlSecondsAfterFinished
+      - '-1'
+      - --psSpec
+      - '{}'
+      - --workerSpec
+      - '{"replicas": 1, "restartPolicy": "OnFailure", "template": {"metadata": {"annotations":
+        {"sidecar.istio.io/inject": "false"}}, "spec": {"containers": [{"name": "tensorflow",
+        "image": "docker.io/liuhougangxa/tf-estimator-mnist", "command": ["sh", "-c"],
+        "args": ["python /opt/model.py --tf-export-dir=/mnt/export --tf-train-steps={{inputs.parameters.training_steps}}
+        {{inputs.parameters.convert-katib-results-Output}}"]}]}}}'
+      - --chiefSpec
+      - '{"replicas": 1, "restartPolicy": "OnFailure", "template": {"metadata": {"annotations":
+        {"sidecar.istio.io/inject": "false"}}, "spec": {"containers": [{"name": "tensorflow",
+        "image": "docker.io/liuhougangxa/tf-estimator-mnist", "command": ["sh", "-c"],
+        "args": ["python /opt/model.py --tf-export-dir=/mnt/export --tf-train-steps={{inputs.parameters.training_steps}}
+        {{inputs.parameters.convert-katib-results-Output}}"], "volumeMounts": [{"mountPath":
+        "/mnt/export", "name": "model-volume"}]}], "volumes": [{"name": "model-volume",
+        "persistentVolumeClaim": {"claimName": "{{inputs.parameters.model-volume-name}}"}}]}}}'
+      - --evaluatorSpec
+      - '{}'
+      - --tfjobTimeoutMinutes
+      - '60'
+      - --deleteAfterDone
+      - "False"
+      command: [python, /ml/launch_tfjob.py]
+      image: nikenano/launchernew:latest
+    inputs:
+      parameters:
+      - {name: convert-katib-results-Output}
+      - {name: model-volume-name}
+      - {name: name}
+      - {name: namespace}
+      - {name: training_steps}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.9
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Kubeflow
+          TFJob launcher", "implementation": {"container": {"args": ["--name", {"inputValue":
+          "Name"}, "--namespace", {"inputValue": "Namespace"}, "--version", {"inputValue":
+          "Version"}, "--activeDeadlineSeconds", {"inputValue": "ActiveDeadlineSeconds"},
+          "--backoffLimit", {"inputValue": "BackoffLimit"}, "--cleanPodPolicy", {"inputValue":
+          "CleanPodPolicy"}, "--ttlSecondsAfterFinished", {"inputValue": "ttl Seconds
+          After Finished"}, "--psSpec", {"inputValue": "PS Spec"}, "--workerSpec",
+          {"inputValue": "Worker Spec"}, "--chiefSpec", {"inputValue": "Chief Spec"},
+          "--evaluatorSpec", {"inputValue": "Evaluator Spec"}, "--tfjobTimeoutMinutes",
+          {"inputValue": "Tfjob Timeout Minutes"}, "--deleteAfterDone", {"inputValue":
+          "Delete Finished Tfjob"}], "command": ["python", "/ml/launch_tfjob.py"],
+          "image": "nikenano/launchernew:latest"}}, "inputs": [{"description": "TFJob
+          name.", "name": "Name", "type": "String"}, {"default": "kubeflow", "description":
+          "TFJob namespace.", "name": "Namespace", "type": "String"}, {"default":
+          "v1", "description": "TFJob version.", "name": "Version", "type": "String"},
+          {"default": -1, "description": "Specifies the duration (in seconds) since
+          startTime during which the job can remain active before it is terminated.
+          Must be a positive integer. This setting applies only to pods where restartPolicy
+          is OnFailure or Always.", "name": "ActiveDeadlineSeconds", "type": "Integer"},
+          {"default": -1, "description": "Number of retries before marking this job
+          as failed.", "name": "BackoffLimit", "type": "Integer"}, {"default": -1,
+          "description": "Defines the TTL for cleaning up finished TFJobs.", "name":
+          "ttl Seconds After Finished", "type": "Integer"}, {"default": "Running",
+          "description": "Defines the policy for cleaning up pods after the TFJob
+          completes.", "name": "CleanPodPolicy", "type": "String"}, {"default": "{}",
+          "description": "TFJob ps replicaSpecs.", "name": "PS Spec", "type": "JsonObject"},
+          {"default": "{}", "description": "TFJob worker replicaSpecs.", "name": "Worker
+          Spec", "type": "JsonObject"}, {"default": "{}", "description": "TFJob chief
+          replicaSpecs.", "name": "Chief Spec", "type": "JsonObject"}, {"default":
+          "{}", "description": "TFJob evaluator replicaSpecs.", "name": "Evaluator
+          Spec", "type": "JsonObject"}, {"default": 1440, "description": "Time in
+          minutes to wait for the TFJob to complete.", "name": "Tfjob Timeout Minutes",
+          "type": "Integer"}, {"default": "True", "description": "Whether to delete
+          the tfjob after it is finished.", "name": "Delete Finished Tfjob", "type":
+          "Bool"}], "name": "Kubeflow - Launch TFJob"}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "98fd1829c0a5ff1b36c53bc2a8d6482d33a7a5dc042e2ee661840be06065c325", "url":
+          "https://raw.githubusercontent.com/kubeflow/pipelines/master/components/kubeflow/launcher/component.yaml"}',
+        pipelines.kubeflow.org/arguments.parameters: '{"ActiveDeadlineSeconds": "-1",
+          "BackoffLimit": "-1", "Chief Spec": "{\"replicas\": 1, \"restartPolicy\":
+          \"OnFailure\", \"template\": {\"metadata\": {\"annotations\": {\"sidecar.istio.io/inject\":
+          \"false\"}}, \"spec\": {\"containers\": [{\"name\": \"tensorflow\", \"image\":
+          \"docker.io/liuhougangxa/tf-estimator-mnist\", \"command\": [\"sh\", \"-c\"],
+          \"args\": [\"python /opt/model.py --tf-export-dir=/mnt/export --tf-train-steps={{inputs.parameters.training_steps}}
+          {{inputs.parameters.convert-katib-results-Output}}\"], \"volumeMounts\":
+          [{\"mountPath\": \"/mnt/export\", \"name\": \"model-volume\"}]}], \"volumes\":
+          [{\"name\": \"model-volume\", \"persistentVolumeClaim\": {\"claimName\":
+          \"{{inputs.parameters.model-volume-name}}\"}}]}}}", "CleanPodPolicy": "Running",
+          "Delete Finished Tfjob": "False", "Evaluator Spec": "{}", "Name": "{{inputs.parameters.name}}",
+          "Namespace": "{{inputs.parameters.namespace}}", "PS Spec": "{}", "Tfjob
+          Timeout Minutes": "60", "Version": "v1", "Worker Spec": "{\"replicas\":
+          1, \"restartPolicy\": \"OnFailure\", \"template\": {\"metadata\": {\"annotations\":
+          {\"sidecar.istio.io/inject\": \"false\"}}, \"spec\": {\"containers\": [{\"name\":
+          \"tensorflow\", \"image\": \"docker.io/liuhougangxa/tf-estimator-mnist\",
+          \"command\": [\"sh\", \"-c\"], \"args\": [\"python /opt/model.py --tf-export-dir=/mnt/export
+          --tf-train-steps={{inputs.parameters.training_steps}} {{inputs.parameters.convert-katib-results-Output}}\"]}]}}}",
+          "ttl Seconds After Finished": "-1"}'}
+  - name: model-volume
+    resource:
+      action: create
+      manifest: |
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: '{{workflow.name}}-model-volume'
+        spec:
+          accessModes:
+          - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+    outputs:
+      parameters:
+      - name: model-volume-manifest
+        valueFrom: {jsonPath: '{}'}
+      - name: model-volume-name
+        valueFrom: {jsonPath: '{.metadata.name}'}
+      - name: model-volume-size
+        valueFrom: {jsonPath: '{.status.capacity.storage}'}
+    metadata:
+      labels:
+        pipelines.kubeflow.org/kfp_sdk_version: 1.8.9
+        pipelines.kubeflow.org/pipeline-sdk-type: kfp
+        pipelines.kubeflow.org/enable_caching: "true"
+  arguments:
+    parameters:
+    - {name: name, value: mnist-katib}
+    - {name: namespace, value: kubeflow-user-example-com}
+    - {name: training_steps, value: '200'}
+  serviceAccountName: pipeline-runner
