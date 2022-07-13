@@ -333,3 +333,43 @@ spec:
     ).after(tfjob_op)
 
     return op
+
+
+def create_kserve_task(name, namespace, tfjob_op):
+    """
+    Create a Kubeflow Pipelines job for KFServing inference.
+
+    Args:
+        name(str): KatibOp의 이름입니다.
+        namespace(str): kubeflow-user-example-com만 사용합니다.
+    """
+
+    data_pvc_name = "data-claim"
+
+    inference_service = """
+apiVersion: "serving.kserve.io/v1beta1"
+kind: "InferenceService"
+metadata:
+    name: {}
+    namespace: {}
+    annotations:
+        "sidecar.istio.io/inject": "false"
+spec:
+    predictor:
+        tensorflow:
+            runtimeVersion: "2.8.0"
+            storageUri: "pvc://{}/{}/"
+""".format(
+        name, namespace, data_pvc_name, pipeline_start_date_str
+    )
+
+    kserve_launcher_op = components.load_component_from_url(
+        "https://raw.githubusercontent.com/kubeflow/pipelines/master/components/kserve/component.yaml"
+    )
+    op = kserve_launcher_op(
+        action="create",
+        canary_traffic_percent="10",
+        inferenceservice_yaml=inference_service,
+    ).after(tfjob_op)
+
+    return op

@@ -48,8 +48,8 @@ def KF_Iris_Pipeline():
     # Run the distributive training with TFJob.
     op_dict["tfjob"] = iris_ops.create_tfjob_task(op_name, namespace, op_dict["hyper_parameters_tuning"])
     op_dict["tfjob"].set_display_name("tfjob")
-    # Create the KFServing inference.
-    op_dict["serving"] = iris_ops.create_kfserving_task(op_name, serving_namespace, op_dict["tfjob"])
+    # Create the Kserve inference.
+    op_dict["serving"] = iris_ops.create_kserve_task(op_name, serving_namespace, op_dict["tfjob"])
     op_dict["serving"].set_display_name("serving").after(op_dict["tfjob"])
     
     
